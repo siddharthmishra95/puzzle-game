@@ -24,14 +24,14 @@
     table: $('table'),
     board: $('board'),
     boardCover: $('boardCover'),
-    coverCanvas: $('coverCanvas'),
+    coverArt: $('coverArt'),
     coverTitle: $('coverTitle'),
     startBtn: $('startBtn'),
     lid: $('lid'),
     tray: $('tray'),
     howTo: $('howTo'),
     looseCount: $('looseCount'),
-    refCanvas: $('refCanvas'),
+    refArt: $('refArt'),
     clock: $('clock'),
     clockDigits: $('clockDigits'),
     clockFill: $('clockFill'),
@@ -65,7 +65,8 @@
   const game = {
     status: 'loading',
     picture: null,
-    source: null,
+    art: null, // URL of the 5:4 picture every piece is cut from
+    artIsBlob: false,
     slots: [],
     cells: [],
     pieces: [],
@@ -162,8 +163,10 @@
     });
   }
 
-  // Crop the picture to 5:4 (cover fit) so it splits into 20 square pieces.
-  function renderSource(img) {
+  // Crop the picture to 5:4 (cover fit) and save it as an image file. Pieces are then
+  // plain background images: browsers can wipe canvas contents when their graphics
+  // reset (Firefox does), but they always redraw images.
+  function cropToImageUrl(img) {
     const canvas = document.createElement('canvas');
     canvas.width = SOURCE_W;
     canvas.height = SOURCE_H;
@@ -175,25 +178,27 @@
     const sh = SOURCE_H / scale;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, (iw - sw) / 2, (ih - sh) / 2, sw, sh, 0, 0, SOURCE_W, SOURCE_H);
-    return canvas;
+    return new Promise((resolve) => {
+      try {
+        canvas.toBlob((blob) => resolve(blob ? URL.createObjectURL(blob) : null), 'image/png');
+      } catch {
+        // Pages opened from file:// cannot export their own images; use the original instead.
+        resolve(null);
+      }
+    });
   }
 
-  function paintPreview(canvas) {
-    const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(game.source, 0, 0, canvas.width, canvas.height);
+  function paintArt(el) {
+    el.style.backgroundImage = `url("${game.art}")`;
   }
 
-  function makePieceCanvas(index) {
-    const canvas = document.createElement('canvas');
-    canvas.width = PIECE_PX;
-    canvas.height = PIECE_PX;
+  // Show one piece of the picture: the full image, scaled to the grid and shifted.
+  function paintPiece(el, index) {
     const col = index % COLS;
     const row = Math.floor(index / COLS);
-    canvas
-      .getContext('2d')
-      .drawImage(game.source, col * PIECE_PX, row * PIECE_PX, PIECE_PX, PIECE_PX, 0, 0, PIECE_PX, PIECE_PX);
-    return canvas;
+    paintArt(el);
+    el.style.backgroundSize = `${COLS * 100}% ${ROWS * 100}%`;
+    el.style.backgroundPosition = `${(col / (COLS - 1)) * 100}% ${(row / (ROWS - 1)) * 100}%`;
   }
 
   // ------------------------------------------------------------------ setup
@@ -261,22 +266,33 @@
     const token = ++game.loadToken;
     setNote(`Loading ${picture.name}…`);
     els.startBtn.disabled = true;
+    let cropped = null;
     try {
       const img = await loadImage(picture.src);
       if (token !== game.loadToken) return false;
+      cropped = await cropToImageUrl(img);
+      if (cropped) await loadImage(cropped);
+      if (token !== game.loadToken) {
+        if (cropped) URL.revokeObjectURL(cropped);
+        return false;
+      }
+      const previous = game.artIsBlob ? game.art : null;
       game.picture = picture;
-      game.source = renderSource(img);
-      paintPreview(els.coverCanvas);
-      paintPreview(els.refCanvas);
+      game.art = cropped || picture.src;
+      game.artIsBlob = Boolean(cropped);
+      paintArt(els.coverArt);
+      paintArt(els.refArt);
       if (!picture.custom) storageSet('picture', picture.id);
       markActivePicture();
       setNote('');
       resetToIdle();
+      if (previous) URL.revokeObjectURL(previous);
       return true;
     } catch {
+      if (cropped) URL.revokeObjectURL(cropped);
       if (token !== game.loadToken) return false;
       setNote(`${picture.name} could not be loaded. Try another picture or a JPG or PNG photo.`, true);
-      els.startBtn.disabled = !game.source;
+      els.startBtn.disabled = !game.art;
       return false;
     }
   }
@@ -373,7 +389,7 @@
     game.status = 'idle';
     els.coverTitle.textContent = game.picture ? game.picture.name : 'Loading picture…';
     els.boardCover.hidden = false;
-    els.startBtn.disabled = !game.source;
+    els.startBtn.disabled = !game.art;
     els.tray.hidden = true;
     els.howTo.hidden = false;
     showPause(false);
@@ -387,7 +403,7 @@
     piece.tabIndex = 0;
     piece.setAttribute('role', 'button');
     piece.setAttribute('aria-pressed', 'false');
-    piece.append(makePieceCanvas(index));
+    paintPiece(piece, index);
     piece.addEventListener('pointerdown', onPiecePointerDown);
     piece.addEventListener('keydown', onPieceKeydown);
     return piece;
@@ -403,7 +419,7 @@
   }
 
   function startGame() {
-    if (!game.source) return;
+    if (!game.art) return;
     stopRound();
     scrollTableIntoView();
     const fromRects = game.slots.map((slot) => slot.getBoundingClientRect());
@@ -488,8 +504,9 @@
     game.status = 'lost';
     game.slots.forEach((slot, i) => {
       if (slot.classList.contains('is-filled')) return;
-      const reveal = makePieceCanvas(i);
+      const reveal = document.createElement('div');
       reveal.className = 'reveal';
+      paintPiece(reveal, i);
       reveal.setAttribute('aria-hidden', 'true');
       slot.append(reveal);
     });
@@ -833,11 +850,9 @@
   function liftGhost() {
     clearSelection();
     const size = els.board.getBoundingClientRect().width / COLS;
-    const ghost = document.createElement('canvas');
-    ghost.width = PIECE_PX;
-    ghost.height = PIECE_PX;
-    ghost.getContext('2d').drawImage(drag.piece.querySelector('canvas'), 0, 0);
+    const ghost = document.createElement('div');
     ghost.className = 'ghost';
+    paintPiece(ghost, Number(drag.piece.dataset.index));
     ghost.style.width = `${size}px`;
     ghost.style.height = `${size}px`;
     ghost.setAttribute('aria-hidden', 'true');

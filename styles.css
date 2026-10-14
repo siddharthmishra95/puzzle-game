@@ -521,10 +521,12 @@ h2 {
   background: var(--board);
 }
 
-.cover-canvas {
+.cover-art {
   display: block;
   width: 100%;
   height: 100%;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
 }
 
 .cover-panel {
@@ -594,13 +596,16 @@ h2 {
   justify-items: end;
 }
 
-.box-cover canvas {
+.box-cover-art {
   display: block;
   width: 64px;
   height: auto;
   aspect-ratio: 5 / 4;
   max-width: 100%;
   border-radius: 4px;
+  background-color: var(--cell);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
   box-shadow: 0 0 0 1px var(--line), 0 3px 8px -4px var(--shadow-strong);
 }
 
@@ -650,11 +655,11 @@ h2 {
   transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
 }
 
-.piece canvas,
-.reveal {
-  display: block;
-  width: 100%;
-  height: 100%;
+.piece,
+.reveal,
+.ghost {
+  background-color: var(--cell);
+  background-repeat: no-repeat;
 }
 
 .tray-cell > .piece:hover {
@@ -991,7 +996,7 @@ h2 {
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
 
-  .box-cover canvas {
+  .box-cover-art {
     width: 88px;
   }
 
@@ -1040,7 +1045,7 @@ h2 {
     gap: 10px;
   }
 
-  .box-cover canvas {
+  .box-cover-art {
     width: 112px;
   }
 
