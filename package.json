@@ -1,0 +1,12 @@
+{
+  "name": "twenty-piece-rush",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rebuild a scrambled picture from 20 pieces before the 5-minute clock runs out, alone or in live races.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

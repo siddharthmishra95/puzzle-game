@@ -31,6 +31,7 @@
       <div><dt>Placed</dt><dd id="placedCount">0/20</dd></div>
       <div><dt>Misses</dt><dd id="missCount">0</dd></div>
       <div><dt>Best</dt><dd id="bestTime">--:--</dd></div>
+      <div id="rankStat" hidden><dt>Rank</dt><dd id="rankValue"></dd></div>
     </dl>
     <div class="controls">
       <button type="button" class="btn btn-icon" id="pauseBtn" data-mode="pause" aria-label="Pause" disabled>
@@ -54,6 +55,10 @@
           <p class="cover-title" id="coverTitle">Loading picture…</p>
           <button type="button" class="btn btn-primary" id="startBtn" disabled>Scramble &amp; start</button>
         </div>
+      </div>
+      <div class="race-countdown" id="raceCountdown" hidden>
+        <span class="race-countdown-label">Race starts in</span>
+        <span class="race-countdown-value" id="raceCountdownValue" aria-live="assertive">3</span>
       </div>
     </section>
 
@@ -83,6 +88,39 @@
       <button type="button" class="btn btn-primary" id="resumeBtn">Resume</button>
     </div>
   </main>
+
+  <section class="race" id="race" aria-labelledby="raceHeading" hidden>
+    <div class="race-head">
+      <h2 id="raceHeading">Race with friends</h2>
+      <p class="race-note" id="raceNote" aria-live="polite"></p>
+    </div>
+
+    <form class="race-entry" id="raceEntry" hidden>
+      <div class="field">
+        <label for="raceName">Your name</label>
+        <input id="raceName" name="name" maxlength="20" autocomplete="nickname" placeholder="Sam" required>
+      </div>
+      <button type="button" class="btn btn-primary" id="raceCreateBtn">Create a race</button>
+      <div class="field field-code">
+        <label for="raceCode">Race code</label>
+        <input id="raceCode" name="code" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD">
+      </div>
+      <button type="submit" class="btn" id="raceJoinBtn">Join race</button>
+    </form>
+
+    <div class="race-room" id="raceRoom" hidden>
+      <div class="race-room-head">
+        <p class="race-code"><span class="race-code-label">Race code</span><span class="race-code-value" id="raceCodeValue"></span></p>
+        <div class="race-actions">
+          <button type="button" class="btn" id="raceCopyBtn">Copy invite link</button>
+          <button type="button" class="btn btn-primary" id="raceStartBtn">Start race</button>
+          <button type="button" class="btn" id="raceLeaveBtn">Leave</button>
+        </div>
+      </div>
+      <p class="race-status" id="raceStatus"></p>
+      <ol class="standings" id="standings"></ol>
+    </div>
+  </section>
 
   <section class="pictures" aria-labelledby="picturesHeading">
     <div class="pictures-head">
@@ -119,5 +157,6 @@
 <p class="sr-only" id="announcer" aria-live="polite"></p>
 
 <script src="script.js"></script>
+<script src="multiplayer.js"></script>
 </body>
 </html>

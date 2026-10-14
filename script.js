@@ -38,6 +38,8 @@
     placedCount: $('placedCount'),
     missCount: $('missCount'),
     bestTime: $('bestTime'),
+    rankStat: $('rankStat'),
+    rankValue: $('rankValue'),
     pauseBtn: $('pauseBtn'),
     pauseText: $('pauseText'),
     restartBtn: $('restartBtn'),
@@ -79,6 +81,8 @@
     warned: new Set(),
     selected: null,
     loadToken: 0,
+    race: null, // { id, endsAt } while a live race round is on
+    roomRole: null, // 'host' or 'guest' while in a race room
   };
 
   let drag = null;
@@ -86,6 +90,8 @@
   let customPicture = null;
   const customBests = new Map();
   const pictureButtons = new Map();
+  const raceHooks = { progress: [], end: [], picture: [] };
+  const emitRace = (type, detail) => raceHooks[type].forEach((fn) => fn(detail));
 
   // ---------------------------------------------------------------- helpers
 
@@ -259,10 +265,11 @@
 
   // --------------------------------------------------------------- pictures
 
-  const canChangePicture = () => game.status !== 'playing' && game.status !== 'scrambling';
+  const canChangePicture = () =>
+    game.status !== 'playing' && game.status !== 'scrambling' && game.roomRole !== 'guest';
 
-  async function selectPicture(picture) {
-    if (!canChangePicture()) return false;
+  async function selectPicture(picture, { force = false } = {}) {
+    if (!force && !canChangePicture()) return false;
     const token = ++game.loadToken;
     setNote(`Loading ${picture.name}…`);
     els.startBtn.disabled = true;
@@ -287,6 +294,7 @@
       setNote('');
       resetToIdle();
       if (previous) URL.revokeObjectURL(previous);
+      emitRace('picture', picture.custom ? null : picture.id);
       return true;
     } catch {
       if (cropped) URL.revokeObjectURL(cropped);
@@ -342,9 +350,19 @@
   function renderNote() {
     let text = note.text;
     let error = note.error;
-    if (!canChangePicture()) {
+    if (game.roomRole === 'guest') {
+      text = 'The race host picks the picture.';
+      error = false;
+    } else if (game.race && !canChangePicture()) {
+      text = 'Finish the race to switch pictures.';
+      error = false;
+    } else if (!canChangePicture()) {
       text = 'Pause or finish this round to switch pictures.';
       error = false;
+    } else if (game.roomRole === 'host' && !text) {
+      text = game.picture?.custom
+        ? 'Races use the built-in pictures. Pick one to start a race.'
+        : 'Your pick is the picture for the next race.';
     } else if (game.status === 'paused' && !text) {
       text = 'Switching pictures now ends this round.';
     }
@@ -418,16 +436,19 @@
     }
   }
 
-  function startGame() {
+  // options.order and options.race come from a live race; a solo round shuffles itself.
+  function startGame(options = {}) {
     if (!game.art) return;
     stopRound();
+    game.race = options.race || null;
     scrollTableIntoView();
     const fromRects = game.slots.map((slot) => slot.getBoundingClientRect());
     clearBoard();
     resetCounters();
+    if (game.race) game.remaining = Math.max(0, game.race.endsAt - Date.now());
 
     game.pieces = Array.from({ length: TOTAL }, (_, i) => createPiece(i));
-    const order = shuffle(game.pieces.map((_, i) => i));
+    const order = options.order ? options.order.slice() : shuffle(game.pieces.map((_, i) => i));
     order.forEach((pieceIndex, cellIndex) => {
       const piece = game.pieces[pieceIndex];
       piece.setAttribute('aria-label', `Loose piece ${cellIndex + 1}`);
@@ -443,6 +464,8 @@
 
     const begin = () => {
       if (game.status !== 'scrambling') return;
+      // In a race the clock runs to the shared deadline, not a fresh 5 minutes.
+      if (game.race) game.remaining = Math.max(0, game.race.endsAt - Date.now());
       game.status = 'playing';
       startTimer();
       render();
@@ -491,6 +514,10 @@
     els.board.classList.add('is-complete');
     render();
     announce('Picture complete!');
+    if (game.race) {
+      emitRace('end', { outcome: 'won', placed: game.placed, misses: game.misses });
+      return;
+    }
     game.resultTimer = window.setTimeout(
       () => showResult({ outcome: 'won', usedMs, isRecord, previousBest }),
       reducedMotion() ? 200 : 1100,
@@ -513,6 +540,10 @@
     els.lid.classList.add('is-over');
     render();
     announce("Time's up.");
+    if (game.race) {
+      emitRace('end', { outcome: 'lost', placed: game.placed, misses: game.misses });
+      return;
+    }
     game.resultTimer = window.setTimeout(() => showResult({ outcome: 'lost', usedMs: TIME_LIMIT_MS }), 700);
   }
 
@@ -593,7 +624,8 @@
   }
 
   function pauseGame() {
-    if (game.status !== 'playing') return;
+    // A race can't be paused: everyone shares one clock.
+    if (game.status !== 'playing' || game.race) return;
     cancelDrag();
     clearSelection();
     game.remaining = Math.max(0, game.deadline - performance.now());
@@ -646,12 +678,14 @@
     else els.looseCount.textContent = `${loose} left in the box`;
 
     const inRound = game.status === 'playing' || game.status === 'paused';
-    els.pauseBtn.disabled = !inRound;
     const pauseLabel = game.status === 'paused' ? 'Resume' : 'Pause';
     els.pauseBtn.dataset.mode = pauseLabel.toLowerCase();
     els.pauseBtn.setAttribute('aria-label', pauseLabel);
     els.pauseText.textContent = pauseLabel;
-    els.restartBtn.disabled = !(inRound || game.status === 'won' || game.status === 'lost');
+    const raceRound = Boolean(game.race) && (inRound || game.status === 'scrambling');
+    els.pauseBtn.disabled = !inRound || raceRound;
+    els.restartBtn.disabled = raceRound || !(inRound || game.status === 'won' || game.status === 'lost');
+    els.hud.classList.toggle('is-race', raceRound);
 
     const locked = !canChangePicture();
     pictureButtons.forEach((button) => {
@@ -681,6 +715,7 @@
       return;
     }
     game.misses += 1;
+    emitRace('progress', { placed: game.placed, misses: game.misses });
     flash(slot, 'is-wrong');
     if (ghost) returnGhost(piece, ghost, () => flash(piece, 'is-shaking'));
     else flash(piece, 'is-shaking');
@@ -702,6 +737,7 @@
     slot.setAttribute('aria-disabled', 'true');
     flash(piece, 'is-snapped');
     game.placed += 1;
+    emitRace('progress', { placed: game.placed, misses: game.misses });
     if (game.placed === TOTAL) {
       winGame();
       return;
@@ -928,8 +964,8 @@
   // ------------------------------------------------------------------- boot
 
   function bindControls() {
-    els.startBtn.addEventListener('click', startGame);
-    els.restartBtn.addEventListener('click', startGame);
+    els.startBtn.addEventListener('click', () => startGame());
+    els.restartBtn.addEventListener('click', () => startGame());
     els.pauseBtn.addEventListener('click', () => (game.status === 'paused' ? resumeGame() : pauseGame()));
     els.resumeBtn.addEventListener('click', resumeGame);
     els.uploadInput.addEventListener('change', onUpload);
@@ -944,6 +980,58 @@
       if (document.hidden) pauseGame();
     });
   }
+
+  // ------------------------------------------------------------- race hooks
+
+  // multiplayer.js runs live races through this small surface.
+  window.puzzleGame = {
+    pictures: PICTURES.map(({ id, name }) => ({ id, name })),
+    currentPictureId: () => (game.picture && !game.picture.custom ? game.picture.id : null),
+    on(type, fn) {
+      raceHooks[type].push(fn);
+    },
+    setRoomRole(role) {
+      game.roomRole = role;
+      render();
+    },
+    revealBoard: () => scrollTableIntoView(),
+    setRank(text) {
+      els.rankStat.hidden = !text;
+      els.rankValue.textContent = text || '';
+    },
+    // Show the race picture on the board without starting a round.
+    async showPicture(pictureId) {
+      const picture = PICTURES.find((p) => p.id === pictureId);
+      if (!picture || game.picture?.id === pictureId || game.race) return;
+      if (game.status === 'playing' || game.status === 'scrambling') return;
+      await selectPicture(picture, { force: true });
+    },
+    async startRace({ id, pictureId, order, endsAt }) {
+      const picture = PICTURES.find((p) => p.id === pictureId);
+      if (!picture) return;
+      if (game.picture?.id !== pictureId) {
+        stopRound();
+        game.status = 'idle';
+        const ok = await selectPicture(picture, { force: true });
+        if (!ok) return;
+      }
+      startGame({ order, race: { id, endsAt } });
+    },
+    // The race is over on the server. A round still running ends like a time-out;
+    // leaving the room mid-race clears the board instead.
+    stopRace({ abandon = false } = {}) {
+      if (!game.race) return;
+      if (abandon) {
+        game.race = null;
+        resetToIdle();
+        return;
+      }
+      if (game.status === 'playing') loseGame();
+      else if (game.status === 'scrambling') resetToIdle();
+      game.race = null;
+      render();
+    },
+  };
 
   buildBoard();
   buildPictureList();

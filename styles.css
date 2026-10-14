@@ -946,6 +946,249 @@ h2 {
   padding-top: 4px;
 }
 
+/* ---------- Live races ---------- */
+
+.hud.is-race .controls {
+  display: none;
+}
+
+.race {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.race-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+}
+
+.race-head h2 {
+  font-size: var(--step-1);
+  font-weight: 800;
+}
+
+.race-note {
+  color: var(--muted);
+  font-size: var(--step--1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.race-note.is-error {
+  color: var(--bad);
+}
+
+.race-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 12px;
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.field label,
+.race-code-label {
+  font: 500 var(--step--2)/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.field input {
+  width: 16ch;
+  max-width: 100%;
+  padding: 9px 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: var(--mat);
+  color: var(--ink);
+  font: 600 var(--step-0)/1.2 var(--font-body);
+}
+
+.field input::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.field-code input {
+  width: 8ch;
+  font-family: var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.race-room {
+  display: grid;
+  gap: 10px;
+}
+
+.race-room-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.race-code {
+  display: grid;
+  gap: 4px;
+}
+
+.race-code-value {
+  font: 700 28px/1 var(--font-mono);
+  letter-spacing: 0.14em;
+}
+
+.race-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.race-status {
+  color: var(--muted);
+}
+
+.standings {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.standing {
+  display: grid;
+  grid-template-columns: 2em minmax(0, 1fr) auto;
+  grid-template-areas:
+    "rank name time"
+    "rank bar stat";
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--cell);
+  font-variant-numeric: tabular-nums;
+}
+
+.standing.is-you {
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+
+.standing.is-away {
+  opacity: 0.6;
+}
+
+.standing.is-lobby {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name time";
+}
+
+.standing-rank {
+  grid-area: rank;
+  font: 700 var(--step-1)/1 var(--font-mono);
+}
+
+.standing-name {
+  grid-area: name;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.standing-bar {
+  grid-area: bar;
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.standing-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform 0.3s ease-out;
+}
+
+.standing.is-done .standing-bar span {
+  background: var(--good);
+}
+
+.standing-stat,
+.standing-time {
+  font: 500 var(--step--1)/1 var(--font-mono);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.standing-stat {
+  grid-area: stat;
+}
+
+.standing-time {
+  grid-area: time;
+  color: var(--muted);
+}
+
+.standing.is-done .standing-time {
+  color: var(--good);
+  font-weight: 700;
+}
+
+.tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--muted);
+  font: 500 var(--step--2)/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: 2px;
+}
+
+.race-countdown {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  border-radius: 10px;
+  background: var(--scrim);
+  color: var(--on-image);
+  text-align: center;
+}
+
+.race-countdown-label {
+  font: 500 var(--step--1)/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.race-countdown-value {
+  font: 800 clamp(64px, 14vw, 140px)/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- Wider screens ---------- */
 
 @media (min-width: 480px) {
@@ -1000,6 +1243,16 @@ h2 {
     width: 88px;
   }
 
+  .standing {
+    grid-template-columns: 2em minmax(0, 1fr) minmax(80px, 220px) 4.5em 6.5em;
+    grid-template-areas: "rank name bar stat time";
+  }
+
+  .standing.is-lobby {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "name time";
+  }
+
   .box-cover figcaption {
     display: block;
   }
@@ -1026,6 +1279,7 @@ h2 {
   }
 
   .table,
+  .race,
   .pictures {
     grid-column: 1 / -1;
   }
