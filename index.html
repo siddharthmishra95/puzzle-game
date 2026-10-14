@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Twenty-Piece Rush</title>
+<meta name="description" content="Rebuild a scrambled picture from 20 pieces before the 5-minute clock runs out.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;600;700&family=Martian+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="masthead">
+    <div class="brand">
+      <h1>Twenty-Piece Rush</h1>
+      <p class="box-label" aria-label="20 pieces, 5 by 4 grid, 5 minute limit">
+        <span>20 pieces</span><span>5 × 4 grid</span><span>5:00 limit</span>
+      </p>
+    </div>
+  </header>
+
+  <div class="hud" id="hud">
+    <div class="clock" id="clock" data-state="calm">
+      <span class="clock-label">Time left</span>
+      <span class="clock-digits" id="clockDigits" role="timer" aria-live="off">05:00</span>
+      <span class="clock-bar" aria-hidden="true"><span class="clock-fill" id="clockFill"></span></span>
+    </div>
+    <dl class="stats">
+      <div><dt>Placed</dt><dd id="placedCount">0/20</dd></div>
+      <div><dt>Misses</dt><dd id="missCount">0</dd></div>
+      <div><dt>Best</dt><dd id="bestTime">--:--</dd></div>
+    </dl>
+    <div class="controls">
+      <button type="button" class="btn btn-icon" id="pauseBtn" data-mode="pause" aria-label="Pause" disabled>
+        <svg class="icon icon-pause" viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.5" height="12" rx="1"/><rect x="11.5" y="4" width="3.5" height="12" rx="1"/></svg>
+        <svg class="icon icon-play" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4.2v11.6a.8.8 0 0 0 1.2.7l9.3-5.8a.8.8 0 0 0 0-1.4L7.2 3.5a.8.8 0 0 0-1.2.7z"/></svg>
+        <span class="btn-text" id="pauseText">Pause</span>
+      </button>
+      <button type="button" class="btn btn-icon" id="restartBtn" aria-label="Restart" disabled>
+        <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.5a6.5 6.5 0 1 0 6.3 8.1" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M10.4 0.9 14.2 3.7 10.4 6.5z"/></svg>
+        <span class="btn-text">Restart</span>
+      </button>
+    </div>
+  </div>
+
+  <main class="table" id="table">
+    <section class="board-wrap" aria-label="Puzzle board">
+      <div class="board" id="board"></div>
+      <div class="board-cover" id="boardCover">
+        <canvas class="cover-canvas" id="coverCanvas" width="1200" height="960" aria-hidden="true"></canvas>
+        <div class="cover-panel">
+          <p class="cover-title" id="coverTitle">Loading picture…</p>
+          <button type="button" class="btn btn-primary" id="startBtn" disabled>Scramble &amp; start</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="lid" id="lid" aria-labelledby="lidHeading">
+      <div class="lid-head">
+        <div class="lid-title">
+          <h2 id="lidHeading">Loose pieces</h2>
+          <p id="looseCount">20 in the box</p>
+        </div>
+        <figure class="box-cover">
+          <canvas id="refCanvas" width="300" height="240" aria-hidden="true"></canvas>
+          <figcaption>Box cover</figcaption>
+        </figure>
+      </div>
+      <div class="tray" id="tray"></div>
+      <ol class="how-to" id="howTo">
+        <li>Pick a picture below, or use your own photo.</li>
+        <li>Press <strong>Scramble &amp; start</strong>. The picture breaks into 20 pieces and the 5-minute clock starts.</li>
+        <li>Drag each piece to its spot on the board. You can also tap a piece, then tap a spot.</li>
+        <li>A piece only sticks in its right spot. Wrong spots send it back and count as a miss.</li>
+      </ol>
+    </aside>
+
+    <div class="pause-cover" id="pauseCover" hidden>
+      <p class="pause-title">Paused</p>
+      <p class="pause-text">The pieces are hidden until you resume.</p>
+      <button type="button" class="btn btn-primary" id="resumeBtn">Resume</button>
+    </div>
+  </main>
+
+  <section class="pictures" aria-labelledby="picturesHeading">
+    <div class="pictures-head">
+      <h2 id="picturesHeading">Choose a picture</h2>
+      <p class="pictures-note" id="pictureNote" aria-live="polite"></p>
+    </div>
+    <div class="picture-list" id="pictureList">
+      <label class="picture picture-upload" id="uploadLabel" for="uploadInput">
+        <span class="picture-thumb upload-thumb" aria-hidden="true">+</span>
+        <span class="picture-name">Your own photo</span>
+        <input type="file" id="uploadInput" accept="image/*">
+      </label>
+    </div>
+  </section>
+</div>
+
+<dialog class="result" id="resultDialog" aria-labelledby="resultTitle">
+  <form method="dialog" class="result-body">
+    <p class="result-kicker" id="resultKicker">Round over</p>
+    <h2 id="resultTitle">Picture complete</h2>
+    <p class="result-text" id="resultText"></p>
+    <dl class="result-stats">
+      <div><dt>Time used</dt><dd id="resultTime">00:00</dd></div>
+      <div><dt>Placed</dt><dd id="resultPlaced">0/20</dd></div>
+      <div><dt>Misses</dt><dd id="resultMisses">0</dd></div>
+    </dl>
+    <div class="result-actions">
+      <button type="submit" class="btn btn-primary" value="again" id="againBtn">Play again</button>
+      <button type="submit" class="btn" value="pick" id="pickBtn">Choose another picture</button>
+    </div>
+  </form>
+</dialog>
+
+<p class="sr-only" id="announcer" aria-live="polite"></p>
+
+<script src="script.js"></script>
+</body>
+</html>
