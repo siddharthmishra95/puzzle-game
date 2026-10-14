@@ -10,9 +10,11 @@
   --line: #bfc9c1;
   --slot-line: #a6b3aa;
   --accent: #eba912;
+  --accent-wash: rgba(235, 169, 18, 0.2);
   --accent-ink: #1f1700;
   --good: #1f7f55;
   --bad: #c7372d;
+  --bad-wash: rgba(199, 55, 45, 0.28);
   --bad-ink: #ffffff;
   --focus: #1f63d6;
   --hover: rgba(22, 32, 30, 0.07);
@@ -48,9 +50,11 @@
     --line: #2b3935;
     --slot-line: #3a4a45;
     --accent: #f2b52e;
+    --accent-wash: rgba(242, 181, 46, 0.2);
     --accent-ink: #1f1700;
     --good: #4cc38a;
     --bad: #ff6a5c;
+    --bad-wash: rgba(255, 106, 92, 0.28);
     --bad-ink: #1c0603;
     --focus: #7fb0ff;
     --hover: rgba(230, 238, 234, 0.08);
@@ -70,9 +74,11 @@
   --line: #2b3935;
   --slot-line: #3a4a45;
   --accent: #f2b52e;
+  --accent-wash: rgba(242, 181, 46, 0.2);
   --accent-ink: #1f1700;
   --good: #4cc38a;
   --bad: #ff6a5c;
+  --bad-wash: rgba(255, 106, 92, 0.28);
   --bad-ink: #1c0603;
   --focus: #7fb0ff;
   --hover: rgba(230, 238, 234, 0.08);
@@ -415,23 +421,29 @@ h2 {
   inset: 0;
   z-index: 2;
   pointer-events: none;
+  opacity: 0;
+  box-shadow: inset 0 0 0 3px var(--accent);
+  background: var(--accent-wash);
 }
 
 .slot.is-target::after,
 .board.has-selection .slot:not(.is-filled):hover::after {
-  box-shadow: inset 0 0 0 3px var(--accent);
-  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  opacity: 1;
 }
 
 .slot.is-wrong::after {
-  animation: wrong 0.45s ease-out;
+  box-shadow: inset 0 0 0 3px var(--bad);
+  background: var(--bad-wash);
+  animation: wrong 0.45s ease-out forwards;
 }
 
 @keyframes wrong {
   0%,
   60% {
-    box-shadow: inset 0 0 0 3px var(--bad);
-    background: color-mix(in srgb, var(--bad) 28%, transparent);
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
   }
 }
 
@@ -668,16 +680,16 @@ h2 {
 
 @keyframes shake {
   20% {
-    translate: -5px 0;
+    transform: translateX(-5px);
   }
   40% {
-    translate: 5px 0;
+    transform: translateX(5px);
   }
   60% {
-    translate: -3px 0;
+    transform: translateX(-3px);
   }
   80% {
-    translate: 2px 0;
+    transform: translateX(2px);
   }
 }
 
@@ -696,7 +708,6 @@ h2 {
   border-radius: 5px;
   transform-origin: 0 0;
   box-shadow: 0 22px 40px -10px var(--shadow-strong);
-  will-change: transform;
 }
 
 .how-to {

@@ -920,6 +920,11 @@
     els.uploadInput.addEventListener('change', onUpload);
     els.resultDialog.addEventListener('close', onResultClose);
     document.addEventListener('keydown', onDocumentKeydown);
+    // The game does its own dragging. Never let the browser start a native drag or
+    // accept a native drop: Firefox and Safari navigate away to whatever is dropped.
+    document.addEventListener('dragstart', (event) => event.preventDefault());
+    window.addEventListener('dragover', (event) => event.preventDefault());
+    window.addEventListener('drop', (event) => event.preventDefault());
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) pauseGame();
     });
