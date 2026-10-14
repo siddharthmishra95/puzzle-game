@@ -3,6 +3,8 @@
 A browser puzzle game. A picture is cut into 20 pieces (a 5 × 4 grid) and scrambled.
 Put every piece back in its spot before the 5-minute clock runs out.
 
+**Play it:** https://siddharthmishra95.github.io/puzzle-game/
+
 ## How to play
 
 1. Pick one of the built-in pictures, or upload your own photo.
@@ -31,6 +33,12 @@ npx serve .
 # or
 python3 -m http.server 8000
 ```
+
+## Hosting on GitHub Pages
+
+The game is plain static files, so GitHub Pages can serve it directly. In the repository,
+go to **Settings → Pages**, set **Source** to **Deploy from a branch**, pick the branch and
+the `/ (root)` folder, and save. The `.nojekyll` file tells Pages to serve the files as-is.
 
 ## Project layout
 
