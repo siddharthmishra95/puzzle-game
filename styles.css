@@ -166,21 +166,84 @@ h2 {
   line-height: 1;
 }
 
-.box-label {
+/* Difficulty picker, styled like the label on the side of a puzzle box. */
+.levels {
   display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
   border: 1.5px solid var(--ink);
-  border-radius: 4px;
-  font: 500 var(--step--2)/1 var(--font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.box-label span {
-  padding: 6px 8px;
+.level {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  cursor: pointer;
 }
 
-.box-label span + span {
+.level + .level {
   border-left: 1.5px solid var(--ink);
+}
+
+.level input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.level-face {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  padding: 6px 10px 7px;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.level-name {
+  font: 700 var(--step-0)/1.1 var(--font-body);
+}
+
+.level-detail {
+  font: 400 var(--step--1)/1.2 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.level:hover .level-face {
+  background: var(--hover);
+}
+
+.level input:checked + .level-face {
+  background: var(--ink);
+  color: var(--panel);
+}
+
+.level input:checked + .level-face .level-detail {
+  color: var(--panel);
+  opacity: 0.8;
+}
+
+.level input:focus-visible + .level-face {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
+
+.levels:disabled {
+  opacity: 0.5;
+}
+
+.levels:disabled .level {
+  cursor: not-allowed;
+}
+
+.levels:disabled .level:hover .level-face {
+  background: none;
 }
 
 /* ---------- HUD ---------- */
@@ -391,8 +454,8 @@ h2 {
 .board {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  grid-template-rows: repeat(4, 1fr);
+  grid-template-columns: repeat(var(--cols, 5), 1fr);
+  grid-template-rows: repeat(var(--rows, 4), 1fr);
   aspect-ratio: 5 / 4;
   width: 100%;
   max-width: 100%;
@@ -619,13 +682,26 @@ h2 {
 
 .tray {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--tray-cols, 5), minmax(0, 1fr));
   gap: 6px;
+}
+
+/* Box columns per level, picked so the pieces fill whole rows. */
+.table[data-level="easy"] {
+  --tray-cols: 4;
+}
+
+.table[data-level="medium"] {
+  --tray-cols: 5;
+}
+
+.table[data-level="hard"] {
+  --tray-cols: 6;
 }
 
 .tray-cell {
   position: relative;
-  aspect-ratio: 1;
+  aspect-ratio: var(--piece-aspect, 1);
   max-width: 100%;
   border-radius: 6px;
   background: var(--cell);
@@ -1231,8 +1307,17 @@ h2 {
     display: inline;
   }
 
-  .tray {
-    grid-template-columns: repeat(10, minmax(0, 1fr));
+  .table[data-level="easy"] {
+    --tray-cols: 6;
+  }
+
+  .table[data-level="medium"],
+  .table[data-level="hard"] {
+    --tray-cols: 10;
+  }
+
+  .level-face {
+    padding: 7px 14px 8px;
   }
 
   .picture-list {
@@ -1295,8 +1380,19 @@ h2 {
   }
 
   .tray {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 10px;
+  }
+
+  .table[data-level="easy"] {
+    --tray-cols: 3;
+  }
+
+  .table[data-level="medium"] {
+    --tray-cols: 4;
+  }
+
+  .table[data-level="hard"] {
+    --tray-cols: 5;
   }
 
   .box-cover-art {

@@ -12,8 +12,15 @@ const crypto = require('node:crypto');
 const PORT = Number(process.env.PORT) || 3000;
 const ROOT = __dirname;
 const DB_FILE = process.env.DB_FILE || path.join(ROOT, 'data', 'db.json');
-const TOTAL_PIECES = 20;
-const RACE_MS = (Number(process.env.RACE_SECONDS) || 300) * 1000;
+// Same table as LEVELS in script.js: grid size and time limit for each difficulty.
+const LEVELS = {
+  easy: { cols: 4, rows: 3, seconds: 240 },
+  medium: { cols: 5, rows: 4, seconds: 300 },
+  hard: { cols: 6, rows: 5, seconds: 360 },
+};
+const DEFAULT_LEVEL = 'medium';
+// RACE_SECONDS overrides every level's time limit (handy for quick test races).
+const RACE_SECONDS_OVERRIDE = Number(process.env.RACE_SECONDS) || 0;
 const COUNTDOWN_MS = 3000;
 const MAX_PLAYERS = 50;
 const PICTURE_IDS = ['alpine-dusk', 'harbor-morning', 'city-lights'];
@@ -71,8 +78,13 @@ function cleanName(value, fallback) {
   return name || fallback;
 }
 
-function shuffledOrder() {
-  const order = Array.from({ length: TOTAL_PIECES }, (_, i) => i);
+const levelOf = (id) => (LEVELS[id] ? id : DEFAULT_LEVEL);
+const piecesIn = (level) => LEVELS[level].cols * LEVELS[level].rows;
+// Rooms saved before levels existed have no level or total: they were medium, 20 pieces.
+const raceTotal = (race) => race.total || piecesIn(DEFAULT_LEVEL);
+
+function shuffledOrder(total) {
+  const order = Array.from({ length: total }, (_, i) => i);
   for (let i = order.length - 1; i > 0; i--) {
     const j = crypto.randomInt(i + 1);
     [order[i], order[j]] = [order[j], order[i]];
@@ -134,6 +146,7 @@ function publicRoom(room) {
     status: room.status,
     hostId: room.hostId,
     pictureId: room.pictureId,
+    level: levelOf(room.level),
     now: Date.now(),
     players: Object.values(room.players)
       .sort((a, b) => a.joinedAt - b.joinedAt)
@@ -141,6 +154,8 @@ function publicRoom(room) {
     race: room.race && {
       id: room.race.id,
       pictureId: room.race.pictureId,
+      level: levelOf(room.race.level),
+      total: raceTotal(room.race),
       order: room.race.order,
       startAt: room.race.startAt,
       endsAt: room.race.endsAt,
@@ -229,6 +244,7 @@ const actions = {
       status: 'lobby',
       hostId: null,
       pictureId: PICTURE_IDS.includes(body.pictureId) ? body.pictureId : PICTURE_IDS[0],
+      level: levelOf(body.level),
       race: null,
       players: {},
     };
@@ -248,12 +264,19 @@ const actions = {
     return { code: room.code, playerId: player.id, secret: player.secret };
   },
 
-  picture(body, room) {
+  // The host sets the next race's picture and/or difficulty.
+  setup(body, room) {
     const player = getPlayer(room, body);
-    if (player.id !== room.hostId) throw new HttpError(403, 'Only the host picks the picture.');
+    if (player.id !== room.hostId) throw new HttpError(403, 'Only the host picks the picture and difficulty.');
     if (room.status === 'racing') throw new HttpError(409, 'Wait for this race to finish.');
-    if (!PICTURE_IDS.includes(body.pictureId)) throw new HttpError(400, 'Races use the built-in pictures.');
-    room.pictureId = body.pictureId;
+    if (body.pictureId !== undefined) {
+      if (!PICTURE_IDS.includes(body.pictureId)) throw new HttpError(400, 'Races use the built-in pictures.');
+      room.pictureId = body.pictureId;
+    }
+    if (body.level !== undefined) {
+      if (!LEVELS[body.level]) throw new HttpError(400, 'Pick Easy, Medium or Hard.');
+      room.level = body.level;
+    }
     touch(room);
     return {};
   },
@@ -268,13 +291,17 @@ const actions = {
     for (const id of participants) {
       Object.assign(room.players[id], { placed: 0, misses: 0, finishedAt: null });
     }
+    const level = levelOf(room.level);
+    const total = piecesIn(level);
     const startAt = Date.now() + COUNTDOWN_MS;
     room.race = {
       id: randomId(4),
       pictureId: room.pictureId,
-      order: shuffledOrder(),
+      level,
+      total,
+      order: shuffledOrder(total),
       startAt,
-      endsAt: startAt + RACE_MS,
+      endsAt: startAt + (RACE_SECONDS_OVERRIDE || LEVELS[level].seconds) * 1000,
       participants,
     };
     room.status = 'racing';
@@ -290,11 +317,12 @@ const actions = {
     // Allow a little network delay past the deadline, but no later finishes.
     if (now < race.startAt || now > race.endsAt + 1000 || player.finishedAt !== null) return {};
     // Counts only go up and stay in range, so a stale or repeated report changes nothing.
-    const placed = Math.min(TOTAL_PIECES, Math.max(0, Math.floor(Number(body.placed) || 0)));
+    const total = raceTotal(race);
+    const placed = Math.min(total, Math.max(0, Math.floor(Number(body.placed) || 0)));
     const misses = Math.min(9999, Math.max(0, Math.floor(Number(body.misses) || 0)));
     player.placed = Math.max(player.placed, placed);
     player.misses = Math.max(player.misses, misses);
-    if (player.placed === TOTAL_PIECES) player.finishedAt = Math.min(now, race.endsAt);
+    if (player.placed === total) player.finishedAt = Math.min(now, race.endsAt);
     if (raceIsDone(room)) finishRace(room);
     touch(room);
     return {};

@@ -1,14 +1,16 @@
 (() => {
   'use strict';
 
-  const COLS = 5;
-  const ROWS = 4;
-  const TOTAL = COLS * ROWS;
-  const TIME_LIMIT_MS = 5 * 60 * 1000;
-  const TIME_LIMIT_S = TIME_LIMIT_MS / 1000;
-  const PIECE_PX = 240;
-  const SOURCE_W = COLS * PIECE_PX;
-  const SOURCE_H = ROWS * PIECE_PX;
+  // More pieces get more time in total, but less time per piece.
+  // server.js has the same table for races; keep the two in step.
+  const LEVELS = {
+    easy: { name: 'Easy', cols: 4, rows: 3, seconds: 240 },
+    medium: { name: 'Medium', cols: 5, rows: 4, seconds: 300 },
+    hard: { name: 'Hard', cols: 6, rows: 5, seconds: 360 },
+  };
+  const DEFAULT_LEVEL = 'medium';
+  const SOURCE_W = 1200; // every picture is cropped to 5:4 at this size
+  const SOURCE_H = 960;
   const DRAG_THRESHOLD_PX = 6;
   const STORAGE_PREFIX = 'twenty-piece-rush:';
 
@@ -26,6 +28,7 @@
     boardCover: $('boardCover'),
     coverArt: $('coverArt'),
     coverTitle: $('coverTitle'),
+    levels: $('levels'),
     startBtn: $('startBtn'),
     lid: $('lid'),
     tray: $('tray'),
@@ -66,6 +69,11 @@
   // status: loading | idle | scrambling | playing | paused | won | lost
   const game = {
     status: 'loading',
+    level: DEFAULT_LEVEL,
+    cols: 0, // grid of the current level, set by applyLevel()
+    rows: 0,
+    total: 0,
+    limitMs: 0,
     picture: null,
     art: null, // URL of the 5:4 picture every piece is cut from
     artIsBlob: false,
@@ -74,7 +82,7 @@
     pieces: [],
     placed: 0,
     misses: 0,
-    remaining: TIME_LIMIT_MS,
+    remaining: 0,
     deadline: 0,
     timerId: 0,
     resultTimer: 0,
@@ -90,7 +98,8 @@
   let customPicture = null;
   const customBests = new Map();
   const pictureButtons = new Map();
-  const raceHooks = { progress: [], end: [], picture: [] };
+  const levelInputs = new Map();
+  const raceHooks = { progress: [], end: [], setup: [] };
   const emitRace = (type, detail) => raceHooks[type].forEach((fn) => fn(detail));
 
   // ---------------------------------------------------------------- helpers
@@ -104,6 +113,7 @@
   // Matches the clock: time used = limit minus the seconds the clock still shows.
   const formatUsed = (usedMs) => formatSeconds(Math.floor(usedMs / 1000));
   const plural = (count, one, many) => (count === 1 ? one : many);
+  const formatLimit = (seconds) => `${Math.floor(seconds / 60)}:${pad(seconds % 60)}`;
 
   function shuffle(list) {
     const out = list.slice();
@@ -130,16 +140,21 @@
     }
   }
 
+  // Best times are kept per picture and level. Medium keeps the key from before levels
+  // existed, so earlier best times still count.
+  const bestKey = (picture) =>
+    game.level === DEFAULT_LEVEL ? `best:${picture.id}` : `best:${game.level}:${picture.id}`;
+
   function getBest(picture) {
     if (!picture) return null;
-    if (picture.custom) return customBests.get(picture.src) ?? null;
-    const value = Number(storageGet(`best:${picture.id}`));
+    if (picture.custom) return customBests.get(`${game.level}:${picture.src}`) ?? null;
+    const value = Number(storageGet(bestKey(picture)));
     return Number.isFinite(value) && value > 0 ? value : null;
   }
 
   function setBest(picture, ms) {
-    if (picture.custom) customBests.set(picture.src, ms);
-    else storageSet(`best:${picture.id}`, String(Math.round(ms)));
+    if (picture.custom) customBests.set(`${game.level}:${picture.src}`, ms);
+    else storageSet(bestKey(picture), String(Math.round(ms)));
   }
 
   function announce(message) {
@@ -200,34 +215,104 @@
 
   // Show one piece of the picture: the full image, scaled to the grid and shifted.
   function paintPiece(el, index) {
-    const col = index % COLS;
-    const row = Math.floor(index / COLS);
+    const { cols, rows } = game;
+    const col = index % cols;
+    const row = Math.floor(index / cols);
     paintArt(el);
-    el.style.backgroundSize = `${COLS * 100}% ${ROWS * 100}%`;
-    el.style.backgroundPosition = `${(col / (COLS - 1)) * 100}% ${(row / (ROWS - 1)) * 100}%`;
+    el.style.backgroundSize = `${cols * 100}% ${rows * 100}%`;
+    el.style.backgroundPosition = `${(col / (cols - 1)) * 100}% ${(row / (rows - 1)) * 100}%`;
   }
 
   // ------------------------------------------------------------------ setup
 
+  function applyLevel(id) {
+    const level = LEVELS[id] || LEVELS[DEFAULT_LEVEL];
+    game.level = LEVELS[id] ? id : DEFAULT_LEVEL;
+    game.cols = level.cols;
+    game.rows = level.rows;
+    game.total = level.cols * level.rows;
+    game.limitMs = level.seconds * 1000;
+  }
+
+  // (Re)build the board spots and box cells for the current level's grid.
   function buildBoard() {
-    for (let i = 0; i < TOTAL; i++) {
+    els.board.replaceChildren();
+    els.tray.replaceChildren();
+    game.slots = [];
+    game.cells = [];
+    els.board.style.setProperty('--cols', game.cols);
+    els.board.style.setProperty('--rows', game.rows);
+    els.table.dataset.level = game.level;
+    els.table.style.setProperty('--piece-aspect', (SOURCE_W / game.cols / (SOURCE_H / game.rows)).toFixed(4));
+    for (let i = 0; i < game.total; i++) {
       const slot = document.createElement('div');
       slot.className = 'slot';
       slot.dataset.index = String(i);
       slot.tabIndex = -1;
       slot.setAttribute('role', 'button');
-      slot.setAttribute('aria-label', `Board spot, row ${Math.floor(i / COLS) + 1}, column ${(i % COLS) + 1}`);
+      slot.setAttribute('aria-label', `Board spot, row ${Math.floor(i / game.cols) + 1}, column ${(i % game.cols) + 1}`);
       slot.addEventListener('click', () => onSlotActivate(slot));
       slot.addEventListener('keydown', (event) => onSlotKeydown(event, i));
       els.board.append(slot);
       game.slots.push(slot);
     }
-    for (let i = 0; i < TOTAL; i++) {
+    for (let i = 0; i < game.total; i++) {
       const cell = document.createElement('div');
       cell.className = 'tray-cell';
       els.tray.append(cell);
       game.cells.push(cell);
     }
+  }
+
+  function buildLevelPicker() {
+    for (const [id, level] of Object.entries(LEVELS)) {
+      const label = document.createElement('label');
+      label.className = 'level';
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'level';
+      input.value = id;
+      input.id = `level-${id}`;
+      input.addEventListener('change', () => {
+        if (input.checked) selectLevel(id);
+      });
+      const face = document.createElement('span');
+      face.className = 'level-face';
+      const name = document.createElement('span');
+      name.className = 'level-name';
+      name.textContent = level.name;
+      const detail = document.createElement('span');
+      detail.className = 'level-detail';
+      detail.textContent = `${level.cols * level.rows} pieces · ${formatLimit(level.seconds)}`;
+      face.append(name, detail);
+      label.append(input, face);
+      els.levels.append(label);
+      levelInputs.set(id, input);
+    }
+  }
+
+  function markActiveLevel() {
+    levelInputs.forEach((input, id) => {
+      input.checked = id === game.level;
+    });
+  }
+
+  function selectLevel(id, { force = false } = {}) {
+    if (!LEVELS[id]) return false;
+    if (!force && !canChangeSetup()) {
+      markActiveLevel();
+      return false;
+    }
+    if (id !== game.level) {
+      stopRound();
+      applyLevel(id);
+      buildBoard();
+      storageSet('level', id);
+      resetToIdle();
+      emitSetup();
+    }
+    markActiveLevel();
+    return true;
   }
 
   function addPictureButton(picture) {
@@ -265,11 +350,17 @@
 
   // --------------------------------------------------------------- pictures
 
-  const canChangePicture = () =>
+  const canChangeSetup = () =>
     game.status !== 'playing' && game.status !== 'scrambling' && game.roomRole !== 'guest';
 
+  const currentSetup = () => ({
+    pictureId: game.picture && !game.picture.custom ? game.picture.id : null,
+    level: game.level,
+  });
+  const emitSetup = () => emitRace('setup', currentSetup());
+
   async function selectPicture(picture, { force = false } = {}) {
-    if (!force && !canChangePicture()) return false;
+    if (!force && !canChangeSetup()) return false;
     const token = ++game.loadToken;
     setNote(`Loading ${picture.name}…`);
     els.startBtn.disabled = true;
@@ -294,7 +385,7 @@
       setNote('');
       resetToIdle();
       if (previous) URL.revokeObjectURL(previous);
-      emitRace('picture', picture.custom ? null : picture.id);
+      emitSetup();
       return true;
     } catch {
       if (cropped) URL.revokeObjectURL(cropped);
@@ -351,20 +442,20 @@
     let text = note.text;
     let error = note.error;
     if (game.roomRole === 'guest') {
-      text = 'The race host picks the picture.';
+      text = 'The race host picks the picture and difficulty.';
       error = false;
-    } else if (game.race && !canChangePicture()) {
-      text = 'Finish the race to switch pictures.';
+    } else if (game.race && !canChangeSetup()) {
+      text = 'Finish the race to switch pictures or difficulty.';
       error = false;
-    } else if (!canChangePicture()) {
-      text = 'Pause or finish this round to switch pictures.';
+    } else if (!canChangeSetup()) {
+      text = 'Pause or finish this round to switch pictures or difficulty.';
       error = false;
     } else if (game.roomRole === 'host' && !text) {
       text = game.picture?.custom
         ? 'Races use the built-in pictures. Pick one to start a race.'
-        : 'Your pick is the picture for the next race.';
+        : 'Your picture and difficulty are used for the next race.';
     } else if (game.status === 'paused' && !text) {
-      text = 'Switching pictures now ends this round.';
+      text = 'Switching pictures or difficulty now ends this round.';
     }
     els.pictureNote.textContent = text;
     els.pictureNote.classList.toggle('is-error', error);
@@ -395,7 +486,7 @@
   function resetCounters() {
     game.placed = 0;
     game.misses = 0;
-    game.remaining = TIME_LIMIT_MS;
+    game.remaining = game.limitMs;
     game.warned.clear();
   }
 
@@ -447,8 +538,9 @@
     resetCounters();
     if (game.race) game.remaining = Math.max(0, game.race.endsAt - Date.now());
 
-    game.pieces = Array.from({ length: TOTAL }, (_, i) => createPiece(i));
-    const order = options.order ? options.order.slice() : shuffle(game.pieces.map((_, i) => i));
+    game.pieces = Array.from({ length: game.total }, (_, i) => createPiece(i));
+    const raceOrder = options.order && options.order.length === game.total ? options.order : null;
+    const order = raceOrder ? raceOrder.slice() : shuffle(game.pieces.map((_, i) => i));
     order.forEach((pieceIndex, cellIndex) => {
       const piece = game.pieces[pieceIndex];
       piece.setAttribute('aria-label', `Loose piece ${cellIndex + 1}`);
@@ -464,12 +556,12 @@
 
     const begin = () => {
       if (game.status !== 'scrambling') return;
-      // In a race the clock runs to the shared deadline, not a fresh 5 minutes.
+      // In a race the clock runs to the shared deadline, not a fresh time limit.
       if (game.race) game.remaining = Math.max(0, game.race.endsAt - Date.now());
       game.status = 'playing';
       startTimer();
       render();
-      announce('Go! 20 pieces, 5 minutes.');
+      announce(`Go! ${game.total} pieces, ${formatLimit(secondsLeft(game.remaining))} on the clock.`);
     };
     if (reducedMotion()) {
       begin();
@@ -507,7 +599,7 @@
     game.remaining = Math.max(0, game.deadline - performance.now());
     stopRound();
     game.status = 'won';
-    const usedMs = TIME_LIMIT_MS - game.remaining;
+    const usedMs = game.limitMs - game.remaining;
     const previousBest = getBest(game.picture);
     const isRecord = previousBest === null || usedMs < previousBest;
     if (isRecord) setBest(game.picture, usedMs);
@@ -544,7 +636,7 @@
       emitRace('end', { outcome: 'lost', placed: game.placed, misses: game.misses });
       return;
     }
-    game.resultTimer = window.setTimeout(() => showResult({ outcome: 'lost', usedMs: TIME_LIMIT_MS }), 700);
+    game.resultTimer = window.setTimeout(() => showResult({ outcome: 'lost', usedMs: game.limitMs }), 700);
   }
 
   function showResult({ outcome, usedMs, isRecord = false, previousBest = null }) {
@@ -555,7 +647,7 @@
     if (outcome === 'won') {
       const spare = formatSeconds(secondsLeft(game.remaining));
       els.resultKicker.textContent = isRecord ? 'New best time' : 'Round complete';
-      els.resultTitle.textContent = 'Picture complete';
+      els.resultTitle.textContent = `${LEVELS[game.level].name} picture complete`;
       if (isRecord && previousBest !== null) {
         els.resultText.textContent = `You rebuilt ${name} with ${spare} to spare and beat your old best of ${formatUsed(previousBest)}.`;
       } else if (isRecord) {
@@ -564,13 +656,13 @@
         els.resultText.textContent = `You rebuilt ${name} with ${spare} to spare. Your best is still ${formatUsed(previousBest)}.`;
       }
     } else {
-      const missing = TOTAL - game.placed;
+      const missing = game.total - game.placed;
       els.resultKicker.textContent = "Time's up";
-      els.resultTitle.textContent = `${game.placed} of ${TOTAL} pieces placed`;
+      els.resultTitle.textContent = `${game.placed} of ${game.total} pieces placed`;
       els.resultText.textContent = `The ${plural(missing, 'missing piece is', `${missing} missing pieces are`)} shown faintly on the board. Try the same picture again or choose another one.`;
     }
     els.resultTime.textContent = formatUsed(usedMs);
-    els.resultPlaced.textContent = `${game.placed}/${TOTAL}`;
+    els.resultPlaced.textContent = `${game.placed}/${game.total}`;
     els.resultMisses.textContent = String(game.misses);
     if (typeof dialog.showModal === 'function') {
       if (!dialog.open) dialog.showModal();
@@ -657,7 +749,7 @@
     const secs = secondsLeft(game.remaining);
     const text = formatSeconds(secs);
     if (els.clockDigits.textContent !== text) els.clockDigits.textContent = text;
-    els.clockFill.style.transform = `scaleX(${(game.remaining / TIME_LIMIT_MS).toFixed(4)})`;
+    els.clockFill.style.transform = `scaleX(${Math.min(1, game.remaining / game.limitMs).toFixed(4)})`;
     const timed = game.status === 'playing' || game.status === 'paused' || game.status === 'lost';
     let state = 'calm';
     if (timed && secs <= 20) state = 'danger';
@@ -667,13 +759,13 @@
   }
 
   function render() {
-    els.placedCount.textContent = `${game.placed}/${TOTAL}`;
+    els.placedCount.textContent = `${game.placed}/${game.total}`;
     els.missCount.textContent = String(game.misses);
     const best = getBest(game.picture);
     els.bestTime.textContent = best ? formatUsed(best) : '--:--';
 
-    const loose = TOTAL - game.placed;
-    if (game.status === 'idle' || game.status === 'loading') els.looseCount.textContent = `${TOTAL} in the box`;
+    const loose = game.total - game.placed;
+    if (game.status === 'idle' || game.status === 'loading') els.looseCount.textContent = `${game.total} in the box`;
     else if (loose === 0) els.looseCount.textContent = 'The box is empty';
     else els.looseCount.textContent = `${loose} left in the box`;
 
@@ -687,10 +779,11 @@
     els.restartBtn.disabled = raceRound || !(inRound || game.status === 'won' || game.status === 'lost');
     els.hud.classList.toggle('is-race', raceRound);
 
-    const locked = !canChangePicture();
+    const locked = !canChangeSetup();
     pictureButtons.forEach((button) => {
       button.disabled = locked;
     });
+    els.levels.disabled = locked;
     els.uploadInput.disabled = locked;
     els.uploadLabel.classList.toggle('is-disabled', locked);
     renderNote();
@@ -738,11 +831,11 @@
     flash(piece, 'is-snapped');
     game.placed += 1;
     emitRace('progress', { placed: game.placed, misses: game.misses });
-    if (game.placed === TOTAL) {
+    if (game.placed === game.total) {
       winGame();
       return;
     }
-    announce(`Placed. ${game.placed} of ${TOTAL}.`);
+    announce(`Placed. ${game.placed} of ${game.total}.`);
     render();
     if (focusWasHere) focusFirstLoosePiece();
   }
@@ -798,12 +891,13 @@
   }
 
   function onSlotKeydown(event, index) {
-    const moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -COLS, ArrowDown: COLS };
+    const { cols } = game;
+    const moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols };
     if (event.key in moves) {
       event.preventDefault();
-      const col = index % COLS;
+      const col = index % cols;
       if (event.key === 'ArrowLeft' && col === 0) return;
-      if (event.key === 'ArrowRight' && col === COLS - 1) return;
+      if (event.key === 'ArrowRight' && col === cols - 1) return;
       const next = game.slots[index + moves[event.key]];
       if (next) next.focus();
       return;
@@ -838,7 +932,8 @@
       relX: (event.clientX - rect.left) / rect.width,
       relY: (event.clientY - rect.top) / rect.height,
       ghost: null,
-      size: 0,
+      width: 0,
+      height: 0,
       target: null,
     };
     try {
@@ -885,22 +980,25 @@
   // Lifting a piece shows a full-size copy (the ghost) under the pointer.
   function liftGhost() {
     clearSelection();
-    const size = els.board.getBoundingClientRect().width / COLS;
+    const board = els.board.getBoundingClientRect();
+    const width = board.width / game.cols;
+    const height = board.height / game.rows;
     const ghost = document.createElement('div');
     ghost.className = 'ghost';
     paintPiece(ghost, Number(drag.piece.dataset.index));
-    ghost.style.width = `${size}px`;
-    ghost.style.height = `${size}px`;
+    ghost.style.width = `${width}px`;
+    ghost.style.height = `${height}px`;
     ghost.setAttribute('aria-hidden', 'true');
     document.body.append(ghost);
     drag.ghost = ghost;
-    drag.size = size;
+    drag.width = width;
+    drag.height = height;
     drag.piece.classList.add('is-lifted');
   }
 
   function moveGhost(x, y) {
-    const left = x - drag.relX * drag.size;
-    const top = y - drag.relY * drag.size;
+    const left = x - drag.relX * drag.width;
+    const top = y - drag.relY * drag.height;
     drag.ghost.style.transform = `translate(${left}px, ${top}px) rotate(-2deg)`;
   }
 
@@ -986,7 +1084,10 @@
   // multiplayer.js runs live races through this small surface.
   window.puzzleGame = {
     pictures: PICTURES.map(({ id, name }) => ({ id, name })),
-    currentPictureId: () => (game.picture && !game.picture.custom ? game.picture.id : null),
+    levels: Object.fromEntries(
+      Object.entries(LEVELS).map(([id, l]) => [id, { name: l.name, pieces: l.cols * l.rows }]),
+    ),
+    currentSetup,
     on(type, fn) {
       raceHooks[type].push(fn);
     },
@@ -999,19 +1100,22 @@
       els.rankStat.hidden = !text;
       els.rankValue.textContent = text || '';
     },
-    // Show the race picture on the board without starting a round.
-    async showPicture(pictureId) {
+    // Show the race's picture and difficulty on the board without starting a round.
+    async showSetup({ pictureId, level }) {
+      if (game.race || game.status === 'playing' || game.status === 'scrambling') return;
+      if (LEVELS[level]) selectLevel(level, { force: true });
       const picture = PICTURES.find((p) => p.id === pictureId);
-      if (!picture || game.picture?.id === pictureId || game.race) return;
-      if (game.status === 'playing' || game.status === 'scrambling') return;
-      await selectPicture(picture, { force: true });
+      if (picture && game.picture?.id !== pictureId) await selectPicture(picture, { force: true });
     },
-    async startRace({ id, pictureId, order, endsAt }) {
+    async startRace({ id, pictureId, level, order, endsAt }) {
       const picture = PICTURES.find((p) => p.id === pictureId);
-      if (!picture) return;
-      if (game.picture?.id !== pictureId) {
-        stopRound();
+      if (!picture || !LEVELS[level]) return;
+      stopRound();
+      if (game.status === 'playing' || game.status === 'scrambling' || game.status === 'paused') {
         game.status = 'idle';
+      }
+      selectLevel(level, { force: true });
+      if (game.picture?.id !== pictureId) {
         const ok = await selectPicture(picture, { force: true });
         if (!ok) return;
       }
@@ -1033,9 +1137,13 @@
     },
   };
 
+  applyLevel(storageGet('level'));
   buildBoard();
+  buildLevelPicker();
+  markActiveLevel();
   buildPictureList();
   bindControls();
+  resetCounters();
   render();
   const savedId = storageGet('picture');
   selectPicture(PICTURES.find((p) => p.id === savedId) || PICTURES[0]);

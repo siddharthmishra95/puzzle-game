@@ -7,7 +7,6 @@
   const game = window.puzzleGame;
   if (!game) return;
 
-  const TOTAL = 20;
   const SESSION_KEY = 'twenty-piece-rush:race';
   const NAME_KEY = 'twenty-piece-rush:name';
 
@@ -49,6 +48,8 @@
     return `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
   };
   const pictureName = (id) => game.pictures.find((p) => p.id === id)?.name || 'the picture';
+  const levelName = (id) => game.levels[id]?.name || 'Medium';
+  const raceLabel = (pictureId, level) => `${pictureName(pictureId)} on ${levelName(level)}`;
   const creds = () => ({ playerId: session.playerId, secret: session.secret });
 
   function store(kind, key, value) {
@@ -134,7 +135,7 @@
     if (!name) return;
     els.createBtn.disabled = true;
     try {
-      enterRoom(await api('rooms', { name, pictureId: game.currentPictureId() }));
+      enterRoom(await api('rooms', { name, ...game.currentSetup() }));
     } catch (err) {
       setNote(err.message, true);
     } finally {
@@ -231,7 +232,7 @@
     }
     const isHost = state.hostId === session.playerId;
     game.setRoomRole(isHost ? 'host' : 'guest');
-    if (!isHost && state.status !== 'racing') game.showPicture(state.pictureId);
+    if (!isHost && state.status !== 'racing') game.showSetup({ pictureId: state.pictureId, level: state.level });
     followRace(state);
     renderRoom();
   }
@@ -256,13 +257,19 @@
     const localStart = race.startAt - clockOffset;
     const localEnd = race.endsAt - clockOffset;
     if (Date.now() >= localEnd) return;
-    game.showPicture(race.pictureId);
+    game.showSetup({ pictureId: race.pictureId, level: race.level });
     game.revealBoard();
     const step = () => {
       const left = localStart - Date.now();
       if (left <= 0) {
         clearCountdown();
-        game.startRace({ id: race.id, pictureId: race.pictureId, order: race.order, endsAt: localEnd });
+        game.startRace({
+          id: race.id,
+          pictureId: race.pictureId,
+          level: race.level,
+          order: race.order,
+          endsAt: localEnd,
+        });
         renderRoom();
         return;
       }
@@ -319,16 +326,17 @@
     els.room.hidden = false;
     els.codeValue.textContent = state.code;
     els.startBtn.hidden = !isHost;
-    els.startBtn.disabled = racing || !game.currentPictureId();
+    const setup = game.currentSetup();
+    els.startBtn.disabled = racing || !setup.pictureId;
     els.startBtn.textContent = state.status === 'finished' ? 'Start next race' : 'Start race';
 
     const host = state.players.find((p) => p.id === state.hostId);
     let status;
     if (racing && Date.now() + clockOffset < race.startAt) {
-      status = `Get ready: ${pictureName(race.pictureId)}.`;
+      status = `Get ready: ${raceLabel(race.pictureId, race.level)}.`;
     } else if (racing) {
       status = inRace
-        ? `Race on: ${pictureName(race.pictureId)}. First to place all ${TOTAL} pieces wins.`
+        ? `Race on: ${raceLabel(race.pictureId, race.level)}. First to place all ${race.total} pieces wins.`
         : 'A race is running. You will be in the next one.';
     } else if (state.status === 'finished') {
       const winner = race.standings.find((s) => s.timeMs !== null);
@@ -338,11 +346,15 @@
         : `${result} Waiting for ${host ? host.name : 'the host'} to start the next race.`;
     } else {
       const count = state.players.length;
+      // The host sees their own pick at once; Start sends it if the server has not caught up.
+      const next = isHost
+        ? raceLabel(setup.pictureId || state.pictureId, setup.level)
+        : raceLabel(state.pictureId, state.level);
       status = isHost
-        ? `${count} ${count === 1 ? 'player' : 'players'} here. Share the code, then start the race.`
-        : `Waiting for ${host ? host.name : 'the host'} to start the race.`;
+        ? `${count} ${count === 1 ? 'player' : 'players'} here. Next race: ${next}. Share the code, then start the race.`
+        : `Waiting for ${host ? host.name : 'the host'} to start the race: ${next}.`;
     }
-    if (isHost && !racing && !game.currentPictureId()) status += ' Pick a built-in picture below first.';
+    if (isHost && !racing && !setup.pictureId) status += ' Pick a built-in picture below first.';
     els.status.textContent = status;
 
     renderStandings(state);
@@ -382,6 +394,7 @@
     const race = state.race;
     const online = new Map(state.players.map((p) => [p.id, p.online]));
     if (race) {
+      const total = race.total;
       race.standings.forEach((s, i) => {
         const li = document.createElement('li');
         li.className = 'standing';
@@ -391,7 +404,7 @@
         const bar = document.createElement('span');
         bar.className = 'standing-bar';
         const fill = document.createElement('span');
-        fill.style.transform = `scaleX(${s.placed / TOTAL})`;
+        fill.style.transform = `scaleX(${s.placed / total})`;
         bar.append(fill);
         let time = '';
         if (s.timeMs !== null) time = formatMs(s.timeMs);
@@ -402,12 +415,12 @@
           cell('standing-rank', String(i + 1)),
           nameCell(s.name, s.id, state),
           bar,
-          cell('standing-stat', `${s.placed}/${TOTAL}`),
+          cell('standing-stat', `${s.placed}/${total}`),
           cell('standing-time', time),
         );
         li.setAttribute(
           'aria-label',
-          `${i + 1}. ${s.name}: ${s.placed} of ${TOTAL} pieces, ${s.misses} misses${time ? `, ${time}` : ''}`,
+          `${i + 1}. ${s.name}: ${s.placed} of ${total} pieces, ${s.misses} misses${time ? `, ${time}` : ''}`,
         );
         rows.push(li);
       });
@@ -458,9 +471,9 @@
     els.startBtn.addEventListener('click', async () => {
       els.startBtn.disabled = true;
       try {
-        const pictureId = game.currentPictureId();
-        if (pictureId && pictureId !== room.pictureId) {
-          await api(`rooms/${session.code}/picture`, { ...creds(), pictureId });
+        const setup = game.currentSetup();
+        if (setup.pictureId && (setup.pictureId !== room.pictureId || setup.level !== room.level)) {
+          await api(`rooms/${session.code}/setup`, { ...creds(), ...setup });
         }
         await api(`rooms/${session.code}/start`, creds());
       } catch (err) {
@@ -485,11 +498,12 @@
 
     game.on('progress', reportProgress);
     game.on('end', reportProgress);
-    // The host's picture choice becomes the next race's picture.
-    game.on('picture', (pictureId) => {
+    // The host's picture and difficulty become the next race's.
+    game.on('setup', (setup) => {
       if (!session || !room || room.hostId !== session.playerId) return;
-      if (pictureId && room.status !== 'racing' && pictureId !== room.pictureId) {
-        api(`rooms/${session.code}/picture`, { ...creds(), pictureId }).catch((err) => setNote(err.message, true));
+      const changed = setup.pictureId !== room.pictureId || setup.level !== room.level;
+      if (setup.pictureId && room.status !== 'racing' && changed) {
+        api(`rooms/${session.code}/setup`, { ...creds(), ...setup }).catch((err) => setNote(err.message, true));
       }
       renderRoom();
     });

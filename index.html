@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Twenty-Piece Rush</title>
-<meta name="description" content="Rebuild a scrambled picture from 20 pieces before the 5-minute clock runs out.">
+<meta name="description" content="Rebuild a scrambled picture piece by piece before the clock runs out. Easy, medium and hard puzzles, alone or in live races.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;600;700&family=Martian+Mono:wght@500;700&display=swap">
@@ -15,9 +15,9 @@
   <header class="masthead">
     <div class="brand">
       <h1>Twenty-Piece Rush</h1>
-      <p class="box-label" aria-label="20 pieces, 5 by 4 grid, 5 minute limit">
-        <span>20 pieces</span><span>5 × 4 grid</span><span>5:00 limit</span>
-      </p>
+      <fieldset class="levels" id="levels">
+        <legend class="sr-only">Difficulty</legend>
+      </fieldset>
     </div>
   </header>
 
@@ -75,8 +75,9 @@
       </div>
       <div class="tray" id="tray"></div>
       <ol class="how-to" id="howTo">
+        <li>Choose Easy, Medium or Hard at the top. Harder levels cut the picture into more pieces, with a little less time for each one.</li>
         <li>Pick a picture below, or use your own photo.</li>
-        <li>Press <strong>Scramble &amp; start</strong>. The picture breaks into 20 pieces and the 5-minute clock starts.</li>
+        <li>Press <strong>Scramble &amp; start</strong>. The picture breaks apart and the clock starts.</li>
         <li>Drag each piece to its spot on the board. You can also tap a piece, then tap a spot.</li>
         <li>A piece only sticks in its right spot. Wrong spots send it back and count as a miss.</li>
       </ol>
