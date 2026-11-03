@@ -99,6 +99,11 @@ The game is plain static files, so GitHub Pages can serve it directly. In the re
 go to **Settings → Pages**, set **Source** to **Deploy from a branch**, pick the branch and
 the `/ (root)` folder, and save. The `.nojekyll` file tells Pages to serve the files as-is.
 
+Browsers may keep GitHub Pages files for up to 10 minutes. The links to `styles.css`,
+`script.js` and `multiplayer.js` in `index.html` end in `?v=<date>`: change that date whenever
+you change those files, so visitors never get a new page with an old script. After an update,
+press Ctrl+Shift+R (Cmd+Shift+R on a Mac) to load it right away.
+
 ## Project layout
 
 ```
